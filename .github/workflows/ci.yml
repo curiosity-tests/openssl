@@ -565,6 +565,8 @@ jobs:
         path: artifacts.tar.gz
 
   no-shared-macos:
+    # racecar: non-Linux leg: observables are linux-only
+    if: false
     runs-on: macos-14
     steps:
     - uses: crashappsec/action-checkout@main
