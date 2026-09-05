@@ -1,3 +1,20 @@
+
+# racecar fork-testbed patch. Changes from upstream:
+#   1. workflow_dispatch with a `leg` input so racecar can drive the run and pick
+#      baseline vs instrumented.
+#   2. actions/checkout -> crashappsec/action-checkout, which wraps checkout and
+#      setup-chalk-action; `chalk:` is the only variable separating the arms.
+#   3. permissions: id-token: write for the action's OIDC connect (the block
+#      zeroes unlisted scopes, so everything upstream relied on is restated).
+#   4. A fail-closed assertion on the instrumented arm.
+#   5. fail-fast: false on every matrix -- a measurement-integrity change, not a
+#      build change: the instrumented arm has strictly more failure surface, so
+#      leaving fail-fast on cancels instrumented siblings more often than
+#      baseline ones and biases the comparison.
+#   6. the concurrency group carries the leg. Both arms run on the same ref, so
+#      upstream's github.ref-keyed group put them in one group and the second
+#      dispatch cancelled the first. Also cancellation-only, never a build change.
+# Build and test COMMANDS are unchanged from upstream.
 # Copyright 2021-2026 The OpenSSL Project Authors. All Rights Reserved.
 #
 # Licensed under the Apache License 2.0 (the "License").  You may not use
@@ -7,7 +24,24 @@
 
 name: GitHub CI
 
+run-name: "GitHub CI ${{ inputs.leg || 'push' }} ${{ inputs.racecar_run }}"
+
 on:
+  workflow_dispatch:
+    inputs:
+      leg:
+        description: "baseline (uninstrumented) or instrumented (under chalk/curiosity)"
+        type: choice
+        options: [instrumented, baseline]
+        default: instrumented
+      profile:
+        description: "CrashOverride chalk profile"
+        type: string
+        default: curiosity-tests-racecar
+      racecar_run:
+        description: "racecar correlation token, echoed into the run name"
+        type: string
+        default: ""
   pull_request:
     paths-ignore:
       - 'doc/**'
@@ -38,8 +72,10 @@ on:
 
 permissions:
   contents: read
+  id-token: write
 
 env:
+  CHALK_ON: ${{ github.event_name == 'workflow_dispatch' && inputs.leg != 'baseline' }}
   OSSL_RUN_CI_TESTS: 1
 
 jobs:
@@ -50,10 +86,24 @@ jobs:
       run: |
         sudo apt-get update
         sudo apt-get -yq --no-install-suggests --no-install-recommends --allow-unauthenticated --allow-downgrades --allow-remove-essential --allow-change-held-packages install unifdef
-    - uses: actions/checkout@v6
+    - uses: crashappsec/action-checkout@main
       with:
+        chalk: ${{ env.CHALK_ON }}
+        profile: ${{ inputs.profile || 'curiosity-tests-racecar' }}
+        observables_continue_on_error: false
+        lfs: false
         fetch-depth: 0
         persist-credentials: false
+
+    - name: Assert instrumentation is live
+      # Socket existence, not LD_PRELOAD: co-monitor's loader clears
+      # LD_PRELOAD once it has injected, so an empty value is what success
+      # looks like. co-hostd also daemonizes, so pgrep does not match it.
+      if: env.CHALK_ON == 'true'
+      run: |
+        test -n "${CURIOSITY_ROOT:-}" || { echo "::error::CURIOSITY_ROOT unset - observables never installed"; exit 1; }
+        test -S "${CURIOSITY_SOCKET_NAME:?socket name unset}" || { echo "::error::co-hostd socket absent"; exit 1; }
+
     - name: config
       run: ./config --strict-warnings --banner=Configured enable-fips && perl configdata.pm --dump
     - name: make build_generated
@@ -69,9 +119,23 @@ jobs:
   check-c99:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v6
+    - uses: crashappsec/action-checkout@main
       with:
+        chalk: ${{ env.CHALK_ON }}
+        profile: ${{ inputs.profile || 'curiosity-tests-racecar' }}
+        observables_continue_on_error: false
+        lfs: false
         persist-credentials: false
+
+    - name: Assert instrumentation is live
+      # Socket existence, not LD_PRELOAD: co-monitor's loader clears
+      # LD_PRELOAD once it has injected, so an empty value is what success
+      # looks like. co-hostd also daemonizes, so pgrep does not match it.
+      if: env.CHALK_ON == 'true'
+      run: |
+        test -n "${CURIOSITY_ROOT:-}" || { echo "::error::CURIOSITY_ROOT unset - observables never installed"; exit 1; }
+        test -S "${CURIOSITY_SOCKET_NAME:?socket name unset}" || { echo "::error::co-hostd socket absent"; exit 1; }
+
     - name: config
       run: CPPFLAGS='-std=c99 -D_XOPEN_SOURCE=1 -D_POSIX_C_SOURCE=200809L' ./config --strict-warnings --banner=Configured enable-sslkeylog no-asm no-secure-memory no-makedepend enable-buildtest-c++ enable-fips enable-lms && perl configdata.pm --dump
     - name: make
@@ -80,9 +144,23 @@ jobs:
   basic_gcc:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v6
+    - uses: crashappsec/action-checkout@main
       with:
+        chalk: ${{ env.CHALK_ON }}
+        profile: ${{ inputs.profile || 'curiosity-tests-racecar' }}
+        observables_continue_on_error: false
+        lfs: false
         persist-credentials: false
+
+    - name: Assert instrumentation is live
+      # Socket existence, not LD_PRELOAD: co-monitor's loader clears
+      # LD_PRELOAD once it has injected, so an empty value is what success
+      # looks like. co-hostd also daemonizes, so pgrep does not match it.
+      if: env.CHALK_ON == 'true'
+      run: |
+        test -n "${CURIOSITY_ROOT:-}" || { echo "::error::CURIOSITY_ROOT unset - observables never installed"; exit 1; }
+        test -S "${CURIOSITY_SOCKET_NAME:?socket name unset}" || { echo "::error::co-hostd socket absent"; exit 1; }
+
     - name: checkout fuzz/corpora submodule
       run: git submodule update --init --depth 1 fuzz/corpora
     - name: localegen
@@ -127,9 +205,23 @@ jobs:
   basic_clang:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v6
+    - uses: crashappsec/action-checkout@main
       with:
+        chalk: ${{ env.CHALK_ON }}
+        profile: ${{ inputs.profile || 'curiosity-tests-racecar' }}
+        observables_continue_on_error: false
+        lfs: false
         persist-credentials: false
+
+    - name: Assert instrumentation is live
+      # Socket existence, not LD_PRELOAD: co-monitor's loader clears
+      # LD_PRELOAD once it has injected, so an empty value is what success
+      # looks like. co-hostd also daemonizes, so pgrep does not match it.
+      if: env.CHALK_ON == 'true'
+      run: |
+        test -n "${CURIOSITY_ROOT:-}" || { echo "::error::CURIOSITY_ROOT unset - observables never installed"; exit 1; }
+        test -S "${CURIOSITY_SOCKET_NAME:?socket name unset}" || { echo "::error::co-hostd socket absent"; exit 1; }
+
     - name: checkout fuzz/corpora submodule
       run: git submodule update --init --depth 1 fuzz/corpora
     - name: config
@@ -152,9 +244,23 @@ jobs:
   linux-arm64:
     runs-on: ubuntu-24.04-arm
     steps:
-    - uses: actions/checkout@v6
+    - uses: crashappsec/action-checkout@main
       with:
+        chalk: ${{ env.CHALK_ON }}
+        profile: ${{ inputs.profile || 'curiosity-tests-racecar' }}
+        observables_continue_on_error: false
+        lfs: false
         persist-credentials: false
+
+    - name: Assert instrumentation is live
+      # Socket existence, not LD_PRELOAD: co-monitor's loader clears
+      # LD_PRELOAD once it has injected, so an empty value is what success
+      # looks like. co-hostd also daemonizes, so pgrep does not match it.
+      if: env.CHALK_ON == 'true'
+      run: |
+        test -n "${CURIOSITY_ROOT:-}" || { echo "::error::CURIOSITY_ROOT unset - observables never installed"; exit 1; }
+        test -S "${CURIOSITY_SOCKET_NAME:?socket name unset}" || { echo "::error::co-hostd socket absent"; exit 1; }
+
     - name: config
       run: ./config --strict-warnings enable-demos enable-fips enable-lms enable-ec_nistp_64_gcc_128 enable-md2 enable-rc5 enable-trace
     - name: config dump
@@ -182,9 +288,38 @@ jobs:
     strategy:
       fail-fast: false
     steps:
-    - uses: actions/checkout@v6
+    - name: Prepare container for action-checkout
+      # action-checkout needs bash (its Detect LFS step exits 127 without
+      # it) and curl: the is_private probe shells `curl -fsSLI` and reads
+      # ANY non-zero exit as "private", which routes to a private action
+      # this fork cannot resolve. Ungated so both arms pay the same setup
+      # cost -- an asymmetric cost between arms would bias the comparison.
+      # Best-effort: it must never fail a job that builds fine without it.
+      run: |
+        if command -v apk >/dev/null 2>&1; then apk add --no-cache bash curl
+        elif command -v microdnf >/dev/null 2>&1; then microdnf -y install bash curl
+        elif command -v dnf >/dev/null 2>&1; then dnf -y install bash curl
+        elif command -v yum >/dev/null 2>&1; then yum -y install bash curl
+        elif command -v apt-get >/dev/null 2>&1; then apt-get -q update && apt-get -q -y install bash curl
+        fi || echo "prep: package install failed, continuing"
+
+    - uses: crashappsec/action-checkout@main
       with:
+        chalk: ${{ env.CHALK_ON }}
+        profile: ${{ inputs.profile || 'curiosity-tests-racecar' }}
+        observables_continue_on_error: false
+        lfs: false
         persist-credentials: false
+
+    - name: Assert instrumentation is live
+      # Socket existence, not LD_PRELOAD: co-monitor's loader clears
+      # LD_PRELOAD once it has injected, so an empty value is what success
+      # looks like. co-hostd also daemonizes, so pgrep does not match it.
+      if: env.CHALK_ON == 'true'
+      run: |
+        test -n "${CURIOSITY_ROOT:-}" || { echo "::error::CURIOSITY_ROOT unset - observables never installed"; exit 1; }
+        test -S "${CURIOSITY_SOCKET_NAME:?socket name unset}" || { echo "::error::co-hostd socket absent"; exit 1; }
+
     - name: config
       run: ./config --strict-warnings --banner=Configured enable-fips && perl configdata.pm --dump
     - name: make
@@ -202,9 +337,23 @@ jobs:
   linux-x86:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v6
+    - uses: crashappsec/action-checkout@main
       with:
+        chalk: ${{ env.CHALK_ON }}
+        profile: ${{ inputs.profile || 'curiosity-tests-racecar' }}
+        observables_continue_on_error: false
+        lfs: false
         persist-credentials: false
+
+    - name: Assert instrumentation is live
+      # Socket existence, not LD_PRELOAD: co-monitor's loader clears
+      # LD_PRELOAD once it has injected, so an empty value is what success
+      # looks like. co-hostd also daemonizes, so pgrep does not match it.
+      if: env.CHALK_ON == 'true'
+      run: |
+        test -n "${CURIOSITY_ROOT:-}" || { echo "::error::CURIOSITY_ROOT unset - observables never installed"; exit 1; }
+        test -S "${CURIOSITY_SOCKET_NAME:?socket name unset}" || { echo "::error::co-hostd socket absent"; exit 1; }
+
     - name: run container
       run: |
         CONTAINER_ID=$(podman run -d -v $(pwd):/mnt -w /mnt --platform=linux/i386 docker.io/i386/debian:13 sleep infinity)
@@ -243,9 +392,23 @@ jobs:
   freebsd-x86_64:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v6
+    - uses: crashappsec/action-checkout@main
       with:
+        chalk: ${{ env.CHALK_ON }}
+        profile: ${{ inputs.profile || 'curiosity-tests-racecar' }}
+        observables_continue_on_error: false
+        lfs: false
         persist-credentials: false
+
+    - name: Assert instrumentation is live
+      # Socket existence, not LD_PRELOAD: co-monitor's loader clears
+      # LD_PRELOAD once it has injected, so an empty value is what success
+      # looks like. co-hostd also daemonizes, so pgrep does not match it.
+      if: env.CHALK_ON == 'true'
+      run: |
+        test -n "${CURIOSITY_ROOT:-}" || { echo "::error::CURIOSITY_ROOT unset - observables never installed"; exit 1; }
+        test -S "${CURIOSITY_SOCKET_NAME:?socket name unset}" || { echo "::error::co-hostd socket absent"; exit 1; }
+
     - name: config
       uses: cross-platform-actions/action@46e8d7fb25520a8d6c64fd2b7a1192611da98eda #v0.30.0
       with:
@@ -287,9 +450,23 @@ jobs:
   minimal:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v6
+    - uses: crashappsec/action-checkout@main
       with:
+        chalk: ${{ env.CHALK_ON }}
+        profile: ${{ inputs.profile || 'curiosity-tests-racecar' }}
+        observables_continue_on_error: false
+        lfs: false
         persist-credentials: false
+
+    - name: Assert instrumentation is live
+      # Socket existence, not LD_PRELOAD: co-monitor's loader clears
+      # LD_PRELOAD once it has injected, so an empty value is what success
+      # looks like. co-hostd also daemonizes, so pgrep does not match it.
+      if: env.CHALK_ON == 'true'
+      run: |
+        test -n "${CURIOSITY_ROOT:-}" || { echo "::error::CURIOSITY_ROOT unset - observables never installed"; exit 1; }
+        test -S "${CURIOSITY_SOCKET_NAME:?socket name unset}" || { echo "::error::co-hostd socket absent"; exit 1; }
+
     - name: checkout fuzz/corpora submodule
       run: git submodule update --init --depth 1 fuzz/corpora
     - name: config
@@ -312,9 +489,23 @@ jobs:
   no-deprecated:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v6
+    - uses: crashappsec/action-checkout@main
       with:
+        chalk: ${{ env.CHALK_ON }}
+        profile: ${{ inputs.profile || 'curiosity-tests-racecar' }}
+        observables_continue_on_error: false
+        lfs: false
         persist-credentials: false
+
+    - name: Assert instrumentation is live
+      # Socket existence, not LD_PRELOAD: co-monitor's loader clears
+      # LD_PRELOAD once it has injected, so an empty value is what success
+      # looks like. co-hostd also daemonizes, so pgrep does not match it.
+      if: env.CHALK_ON == 'true'
+      run: |
+        test -n "${CURIOSITY_ROOT:-}" || { echo "::error::CURIOSITY_ROOT unset - observables never installed"; exit 1; }
+        test -S "${CURIOSITY_SOCKET_NAME:?socket name unset}" || { echo "::error::co-hostd socket absent"; exit 1; }
+
     - name: checkout fuzz/corpora submodule
       run: git submodule update --init --depth 1 fuzz/corpora
     - name: config
@@ -337,9 +528,23 @@ jobs:
   no-shared-ubuntu:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v6
+    - uses: crashappsec/action-checkout@main
       with:
+        chalk: ${{ env.CHALK_ON }}
+        profile: ${{ inputs.profile || 'curiosity-tests-racecar' }}
+        observables_continue_on_error: false
+        lfs: false
         persist-credentials: false
+
+    - name: Assert instrumentation is live
+      # Socket existence, not LD_PRELOAD: co-monitor's loader clears
+      # LD_PRELOAD once it has injected, so an empty value is what success
+      # looks like. co-hostd also daemonizes, so pgrep does not match it.
+      if: env.CHALK_ON == 'true'
+      run: |
+        test -n "${CURIOSITY_ROOT:-}" || { echo "::error::CURIOSITY_ROOT unset - observables never installed"; exit 1; }
+        test -S "${CURIOSITY_SOCKET_NAME:?socket name unset}" || { echo "::error::co-hostd socket absent"; exit 1; }
+
     - name: checkout fuzz/corpora submodule
       run: git submodule update --init --depth 1 fuzz/corpora
     - name: config
@@ -362,9 +567,23 @@ jobs:
   no-shared-macos:
     runs-on: macos-14
     steps:
-    - uses: actions/checkout@v6
+    - uses: crashappsec/action-checkout@main
       with:
+        chalk: ${{ env.CHALK_ON }}
+        profile: ${{ inputs.profile || 'curiosity-tests-racecar' }}
+        observables_continue_on_error: false
+        lfs: false
         persist-credentials: false
+
+    - name: Assert instrumentation is live
+      # Socket existence, not LD_PRELOAD: co-monitor's loader clears
+      # LD_PRELOAD once it has injected, so an empty value is what success
+      # looks like. co-hostd also daemonizes, so pgrep does not match it.
+      if: env.CHALK_ON == 'true'
+      run: |
+        test -n "${CURIOSITY_ROOT:-}" || { echo "::error::CURIOSITY_ROOT unset - observables never installed"; exit 1; }
+        test -S "${CURIOSITY_SOCKET_NAME:?socket name unset}" || { echo "::error::co-hostd socket absent"; exit 1; }
+
     - name: checkout fuzz/corpora submodule
       run: git submodule update --init --depth 1 fuzz/corpora
     - name: config
@@ -387,9 +606,23 @@ jobs:
   non-caching:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v6
+    - uses: crashappsec/action-checkout@main
       with:
+        chalk: ${{ env.CHALK_ON }}
+        profile: ${{ inputs.profile || 'curiosity-tests-racecar' }}
+        observables_continue_on_error: false
+        lfs: false
         persist-credentials: false
+
+    - name: Assert instrumentation is live
+      # Socket existence, not LD_PRELOAD: co-monitor's loader clears
+      # LD_PRELOAD once it has injected, so an empty value is what success
+      # looks like. co-hostd also daemonizes, so pgrep does not match it.
+      if: env.CHALK_ON == 'true'
+      run: |
+        test -n "${CURIOSITY_ROOT:-}" || { echo "::error::CURIOSITY_ROOT unset - observables never installed"; exit 1; }
+        test -S "${CURIOSITY_SOCKET_NAME:?socket name unset}" || { echo "::error::co-hostd socket absent"; exit 1; }
+
     - name: checkout fuzz/corpora submodule
       run: git submodule update --init --depth 1 fuzz/corpora
     - name: Adjust ASLR for sanitizer
@@ -416,9 +649,23 @@ jobs:
   address_ub_sanitizer:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v6
+    - uses: crashappsec/action-checkout@main
       with:
+        chalk: ${{ env.CHALK_ON }}
+        profile: ${{ inputs.profile || 'curiosity-tests-racecar' }}
+        observables_continue_on_error: false
+        lfs: false
         persist-credentials: false
+
+    - name: Assert instrumentation is live
+      # Socket existence, not LD_PRELOAD: co-monitor's loader clears
+      # LD_PRELOAD once it has injected, so an empty value is what success
+      # looks like. co-hostd also daemonizes, so pgrep does not match it.
+      if: env.CHALK_ON == 'true'
+      run: |
+        test -n "${CURIOSITY_ROOT:-}" || { echo "::error::CURIOSITY_ROOT unset - observables never installed"; exit 1; }
+        test -S "${CURIOSITY_SOCKET_NAME:?socket name unset}" || { echo "::error::co-hostd socket absent"; exit 1; }
+
     - name: checkout fuzz/corpora submodule
       run: git submodule update --init --depth 1 fuzz/corpora
     - name: Adjust ASLR for sanitizer
@@ -445,9 +692,23 @@ jobs:
   fuzz_tests:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v6
+    - uses: crashappsec/action-checkout@main
       with:
+        chalk: ${{ env.CHALK_ON }}
+        profile: ${{ inputs.profile || 'curiosity-tests-racecar' }}
+        observables_continue_on_error: false
+        lfs: false
         persist-credentials: false
+
+    - name: Assert instrumentation is live
+      # Socket existence, not LD_PRELOAD: co-monitor's loader clears
+      # LD_PRELOAD once it has injected, so an empty value is what success
+      # looks like. co-hostd also daemonizes, so pgrep does not match it.
+      if: env.CHALK_ON == 'true'
+      run: |
+        test -n "${CURIOSITY_ROOT:-}" || { echo "::error::CURIOSITY_ROOT unset - observables never installed"; exit 1; }
+        test -S "${CURIOSITY_SOCKET_NAME:?socket name unset}" || { echo "::error::co-hostd socket absent"; exit 1; }
+
     - name: checkout fuzz/corpora submodule
       run: git submodule update --init --depth 1 fuzz/corpora
     - name: Adjust ASLR for sanitizer
@@ -476,9 +737,23 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-    - uses: actions/checkout@v6
+    - uses: crashappsec/action-checkout@main
       with:
+        chalk: ${{ env.CHALK_ON }}
+        profile: ${{ inputs.profile || 'curiosity-tests-racecar' }}
+        observables_continue_on_error: false
+        lfs: false
         persist-credentials: false
+
+    - name: Assert instrumentation is live
+      # Socket existence, not LD_PRELOAD: co-monitor's loader clears
+      # LD_PRELOAD once it has injected, so an empty value is what success
+      # looks like. co-hostd also daemonizes, so pgrep does not match it.
+      if: env.CHALK_ON == 'true'
+      run: |
+        test -n "${CURIOSITY_ROOT:-}" || { echo "::error::CURIOSITY_ROOT unset - observables never installed"; exit 1; }
+        test -S "${CURIOSITY_SOCKET_NAME:?socket name unset}" || { echo "::error::co-hostd socket absent"; exit 1; }
+
     - name: checkout fuzz/corpora submodule
       run: git submodule update --init --depth 1 fuzz/corpora
     - name: trim corpora to a few seeds per fuzzer
@@ -513,9 +788,23 @@ jobs:
   memory_sanitizer:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v6
+    - uses: crashappsec/action-checkout@main
       with:
+        chalk: ${{ env.CHALK_ON }}
+        profile: ${{ inputs.profile || 'curiosity-tests-racecar' }}
+        observables_continue_on_error: false
+        lfs: false
         persist-credentials: false
+
+    - name: Assert instrumentation is live
+      # Socket existence, not LD_PRELOAD: co-monitor's loader clears
+      # LD_PRELOAD once it has injected, so an empty value is what success
+      # looks like. co-hostd also daemonizes, so pgrep does not match it.
+      if: env.CHALK_ON == 'true'
+      run: |
+        test -n "${CURIOSITY_ROOT:-}" || { echo "::error::CURIOSITY_ROOT unset - observables never installed"; exit 1; }
+        test -S "${CURIOSITY_SOCKET_NAME:?socket name unset}" || { echo "::error::co-hostd socket absent"; exit 1; }
+
     - name: checkout fuzz/corpora submodule
       run: git submodule update --init --depth 1 fuzz/corpora
     - name: Adjust ASLR for sanitizer
@@ -543,9 +832,23 @@ jobs:
   threads_sanitizer:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v6
+    - uses: crashappsec/action-checkout@main
       with:
+        chalk: ${{ env.CHALK_ON }}
+        profile: ${{ inputs.profile || 'curiosity-tests-racecar' }}
+        observables_continue_on_error: false
+        lfs: false
         persist-credentials: false
+
+    - name: Assert instrumentation is live
+      # Socket existence, not LD_PRELOAD: co-monitor's loader clears
+      # LD_PRELOAD once it has injected, so an empty value is what success
+      # looks like. co-hostd also daemonizes, so pgrep does not match it.
+      if: env.CHALK_ON == 'true'
+      run: |
+        test -n "${CURIOSITY_ROOT:-}" || { echo "::error::CURIOSITY_ROOT unset - observables never installed"; exit 1; }
+        test -S "${CURIOSITY_SOCKET_NAME:?socket name unset}" || { echo "::error::co-hostd socket absent"; exit 1; }
+
     - name: checkout fuzz/corpora submodule
       run: git submodule update --init --depth 1 fuzz/corpora
     - name: Adjust ASLR for sanitizer
@@ -572,9 +875,23 @@ jobs:
   enable_non-default_options:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v6
+    - uses: crashappsec/action-checkout@main
       with:
+        chalk: ${{ env.CHALK_ON }}
+        profile: ${{ inputs.profile || 'curiosity-tests-racecar' }}
+        observables_continue_on_error: false
+        lfs: false
         persist-credentials: false
+
+    - name: Assert instrumentation is live
+      # Socket existence, not LD_PRELOAD: co-monitor's loader clears
+      # LD_PRELOAD once it has injected, so an empty value is what success
+      # looks like. co-hostd also daemonizes, so pgrep does not match it.
+      if: env.CHALK_ON == 'true'
+      run: |
+        test -n "${CURIOSITY_ROOT:-}" || { echo "::error::CURIOSITY_ROOT unset - observables never installed"; exit 1; }
+        test -S "${CURIOSITY_SOCKET_NAME:?socket name unset}" || { echo "::error::co-hostd socket absent"; exit 1; }
+
     - name: checkout fuzz/corpora submodule
       run: git submodule update --init --depth 1 fuzz/corpora
     - name: modprobe tls
@@ -599,9 +916,23 @@ jobs:
   full_featured:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v6
+    - uses: crashappsec/action-checkout@main
       with:
+        chalk: ${{ env.CHALK_ON }}
+        profile: ${{ inputs.profile || 'curiosity-tests-racecar' }}
+        observables_continue_on_error: false
+        lfs: false
         persist-credentials: false
+
+    - name: Assert instrumentation is live
+      # Socket existence, not LD_PRELOAD: co-monitor's loader clears
+      # LD_PRELOAD once it has injected, so an empty value is what success
+      # looks like. co-hostd also daemonizes, so pgrep does not match it.
+      if: env.CHALK_ON == 'true'
+      run: |
+        test -n "${CURIOSITY_ROOT:-}" || { echo "::error::CURIOSITY_ROOT unset - observables never installed"; exit 1; }
+        test -S "${CURIOSITY_SOCKET_NAME:?socket name unset}" || { echo "::error::co-hostd socket absent"; exit 1; }
+
     - name: checkout fuzz/corpora submodule
       run: git submodule update --init --depth 1 fuzz/corpora
     - name: modprobe tls
@@ -632,9 +963,23 @@ jobs:
   no-legacy:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v6
+    - uses: crashappsec/action-checkout@main
       with:
+        chalk: ${{ env.CHALK_ON }}
+        profile: ${{ inputs.profile || 'curiosity-tests-racecar' }}
+        observables_continue_on_error: false
+        lfs: false
         persist-credentials: false
+
+    - name: Assert instrumentation is live
+      # Socket existence, not LD_PRELOAD: co-monitor's loader clears
+      # LD_PRELOAD once it has injected, so an empty value is what success
+      # looks like. co-hostd also daemonizes, so pgrep does not match it.
+      if: env.CHALK_ON == 'true'
+      run: |
+        test -n "${CURIOSITY_ROOT:-}" || { echo "::error::CURIOSITY_ROOT unset - observables never installed"; exit 1; }
+        test -S "${CURIOSITY_SOCKET_NAME:?socket name unset}" || { echo "::error::co-hostd socket absent"; exit 1; }
+
     - name: checkout fuzz/corpora submodule
       run: git submodule update --init --depth 1 fuzz/corpora
     - name: config
@@ -657,9 +1002,23 @@ jobs:
   legacy:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v6
+    - uses: crashappsec/action-checkout@main
       with:
+        chalk: ${{ env.CHALK_ON }}
+        profile: ${{ inputs.profile || 'curiosity-tests-racecar' }}
+        observables_continue_on_error: false
+        lfs: false
         persist-credentials: false
+
+    - name: Assert instrumentation is live
+      # Socket existence, not LD_PRELOAD: co-monitor's loader clears
+      # LD_PRELOAD once it has injected, so an empty value is what success
+      # looks like. co-hostd also daemonizes, so pgrep does not match it.
+      if: env.CHALK_ON == 'true'
+      run: |
+        test -n "${CURIOSITY_ROOT:-}" || { echo "::error::CURIOSITY_ROOT unset - observables never installed"; exit 1; }
+        test -S "${CURIOSITY_SOCKET_NAME:?socket name unset}" || { echo "::error::co-hostd socket absent"; exit 1; }
+
     - name: checkout fuzz/corpora submodule
       run: git submodule update --init --depth 1 fuzz/corpora
     - name: config
@@ -682,10 +1041,24 @@ jobs:
   external-tests-misc:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v6
+    - uses: crashappsec/action-checkout@main
       with:
+        chalk: ${{ env.CHALK_ON }}
+        profile: ${{ inputs.profile || 'curiosity-tests-racecar' }}
+        observables_continue_on_error: false
+        lfs: false
         submodules: recursive
         persist-credentials: false
+
+    - name: Assert instrumentation is live
+      # Socket existence, not LD_PRELOAD: co-monitor's loader clears
+      # LD_PRELOAD once it has injected, so an empty value is what success
+      # looks like. co-hostd also daemonizes, so pgrep does not match it.
+      if: env.CHALK_ON == 'true'
+      run: |
+        test -n "${CURIOSITY_ROOT:-}" || { echo "::error::CURIOSITY_ROOT unset - observables never installed"; exit 1; }
+        test -S "${CURIOSITY_SOCKET_NAME:?socket name unset}" || { echo "::error::co-hostd socket absent"; exit 1; }
+
     - name: package installs
       run: |
         sudo apt-get update
@@ -723,10 +1096,24 @@ jobs:
   external-tests-oqs-provider:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v6
+    - uses: crashappsec/action-checkout@main
       with:
+        chalk: ${{ env.CHALK_ON }}
+        profile: ${{ inputs.profile || 'curiosity-tests-racecar' }}
+        observables_continue_on_error: false
+        lfs: false
         submodules: recursive
         persist-credentials: false
+
+    - name: Assert instrumentation is live
+      # Socket existence, not LD_PRELOAD: co-monitor's loader clears
+      # LD_PRELOAD once it has injected, so an empty value is what success
+      # looks like. co-hostd also daemonizes, so pgrep does not match it.
+      if: env.CHALK_ON == 'true'
+      run: |
+        test -n "${CURIOSITY_ROOT:-}" || { echo "::error::CURIOSITY_ROOT unset - observables never installed"; exit 1; }
+        test -S "${CURIOSITY_SOCKET_NAME:?socket name unset}" || { echo "::error::co-hostd socket absent"; exit 1; }
+
     - name: config
       run: ./config --strict-warnings --banner=Configured --debug enable-external-tests && perl configdata.pm --dump
     - name: make
@@ -745,9 +1132,38 @@ jobs:
     - name: package installs
       run: |
         dnf install -y perl-FindBin perl-IPC-Cmd perl-File-Compare perl-File-Copy perl-Test-Simple perl-Test-Harness python3 make g++ perl git meson opensc expect kryoptic xxd
-    - uses: actions/checkout@v6
+    - name: Prepare container for action-checkout
+      # action-checkout needs bash (its Detect LFS step exits 127 without
+      # it) and curl: the is_private probe shells `curl -fsSLI` and reads
+      # ANY non-zero exit as "private", which routes to a private action
+      # this fork cannot resolve. Ungated so both arms pay the same setup
+      # cost -- an asymmetric cost between arms would bias the comparison.
+      # Best-effort: it must never fail a job that builds fine without it.
+      run: |
+        if command -v apk >/dev/null 2>&1; then apk add --no-cache bash curl
+        elif command -v microdnf >/dev/null 2>&1; then microdnf -y install bash curl
+        elif command -v dnf >/dev/null 2>&1; then dnf -y install bash curl
+        elif command -v yum >/dev/null 2>&1; then yum -y install bash curl
+        elif command -v apt-get >/dev/null 2>&1; then apt-get -q update && apt-get -q -y install bash curl
+        fi || echo "prep: package install failed, continuing"
+
+    - uses: crashappsec/action-checkout@main
       with:
+        chalk: ${{ env.CHALK_ON }}
+        profile: ${{ inputs.profile || 'curiosity-tests-racecar' }}
+        observables_continue_on_error: false
+        lfs: false
         persist-credentials: false
+
+    - name: Assert instrumentation is live
+      # Socket existence, not LD_PRELOAD: co-monitor's loader clears
+      # LD_PRELOAD once it has injected, so an empty value is what success
+      # looks like. co-hostd also daemonizes, so pgrep does not match it.
+      if: env.CHALK_ON == 'true'
+      run: |
+        test -n "${CURIOSITY_ROOT:-}" || { echo "::error::CURIOSITY_ROOT unset - observables never installed"; exit 1; }
+        test -S "${CURIOSITY_SOCKET_NAME:?socket name unset}" || { echo "::error::co-hostd socket absent"; exit 1; }
+
     - name: checkout fuzz/corpora and pkcs11-provider submodule
       run: |
         git config --global --add safe.directory "$GITHUB_WORKSPACE"
@@ -772,14 +1188,29 @@ jobs:
   external-tests-pyca:
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
         PYTHON:
           - 3.9
     steps:
-    - uses: actions/checkout@v6
+    - uses: crashappsec/action-checkout@main
       with:
+        chalk: ${{ env.CHALK_ON }}
+        profile: ${{ inputs.profile || 'curiosity-tests-racecar' }}
+        observables_continue_on_error: false
+        lfs: false
         submodules: recursive
         persist-credentials: false
+
+    - name: Assert instrumentation is live
+      # Socket existence, not LD_PRELOAD: co-monitor's loader clears
+      # LD_PRELOAD once it has injected, so an empty value is what success
+      # looks like. co-hostd also daemonizes, so pgrep does not match it.
+      if: env.CHALK_ON == 'true'
+      run: |
+        test -n "${CURIOSITY_ROOT:-}" || { echo "::error::CURIOSITY_ROOT unset - observables never installed"; exit 1; }
+        test -S "${CURIOSITY_SOCKET_NAME:?socket name unset}" || { echo "::error::co-hostd socket absent"; exit 1; }
+
     - name: package installs
       run: |
         sudo apt-get update
@@ -805,9 +1236,23 @@ jobs:
   external-test-bssl:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v6
+    - uses: crashappsec/action-checkout@main
       with:
+        chalk: ${{ env.CHALK_ON }}
+        profile: ${{ inputs.profile || 'curiosity-tests-racecar' }}
+        observables_continue_on_error: false
+        lfs: false
         persist-credentials: false
+
+    - name: Assert instrumentation is live
+      # Socket existence, not LD_PRELOAD: co-monitor's loader clears
+      # LD_PRELOAD once it has injected, so an empty value is what success
+      # looks like. co-hostd also daemonizes, so pgrep does not match it.
+      if: env.CHALK_ON == 'true'
+      run: |
+        test -n "${CURIOSITY_ROOT:-}" || { echo "::error::CURIOSITY_ROOT unset - observables never installed"; exit 1; }
+        test -S "${CURIOSITY_SOCKET_NAME:?socket name unset}" || { echo "::error::co-hostd socket absent"; exit 1; }
+
     - name: Configure OpenSSL
       run: ./config enable-external-tests
     - name: Build OpenSSL
@@ -829,9 +1274,23 @@ jobs:
   external-test-nss:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v6
+    - uses: crashappsec/action-checkout@main
       with:
+        chalk: ${{ env.CHALK_ON }}
+        profile: ${{ inputs.profile || 'curiosity-tests-racecar' }}
+        observables_continue_on_error: false
+        lfs: false
         persist-credentials: false
+
+    - name: Assert instrumentation is live
+      # Socket existence, not LD_PRELOAD: co-monitor's loader clears
+      # LD_PRELOAD once it has injected, so an empty value is what success
+      # looks like. co-hostd also daemonizes, so pgrep does not match it.
+      if: env.CHALK_ON == 'true'
+      run: |
+        test -n "${CURIOSITY_ROOT:-}" || { echo "::error::CURIOSITY_ROOT unset - observables never installed"; exit 1; }
+        test -S "${CURIOSITY_SOCKET_NAME:?socket name unset}" || { echo "::error::co-hostd socket absent"; exit 1; }
+
     - name: Configure OpenSSL
       run: ./config enable-external-tests
     - name: Build OpenSSL
