@@ -32,8 +32,8 @@ jobs:
       run: make help
     - name: make md-nits
       run: |
-          sudo gem install mdl
-          make md-nits
+        sudo gem install mdl
+        make md-nits
 
   # out-of-source-and-install checks multiple things at the same time:
   # - That building, testing and installing works from an out-of-source
@@ -82,44 +82,3 @@ jobs:
       run: make install
       working-directory: ./build
 
-  out-of-readonly-source-and-install-macos:
-    runs-on: macos-15
-    steps:
-    - uses: actions/checkout@v6
-      with:
-        path: ./source
-        persist-credentials: false
-    - name: checkout fuzz/corpora submodule
-      run: git submodule update --init --depth 1 fuzz/corpora
-      working-directory: ./source
-    - name: make source read-only
-      run: chmod -R a-w ./source
-    - name: create build and install directories
-      run: |
-        mkdir ./build
-        mkdir ./install
-    - name: config
-      run: |
-        ../source/config --banner=Configured enable-fips enable-lms enable-demos enable-h3demo enable-quic enable-acvp-tests --strict-warnings --prefix=$(cd ../install; pwd)
-        perl configdata.pm --dump
-      working-directory: ./build
-    - name: make
-      run: make -s -j4
-      working-directory: ./build
-    - name: get cpu info
-      run: |
-        sysctl machdep.cpu
-        ./util/opensslwrap.sh version -c
-      working-directory: ./build
-    - name: make test
-      run: ../source/.github/workflows/make-test
-      working-directory: ./build
-    - name: save artifacts
-      if: success() || failure()
-      uses: actions/upload-artifact@v5
-      with:
-        name: "ci@out-of-readonly-source-and-install-macos-15"
-        path: build/artifacts.tar.gz
-    - name: make install
-      run: make install
-      working-directory: ./build

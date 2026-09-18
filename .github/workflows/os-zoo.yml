@@ -9,7 +9,7 @@ name: OS Zoo CI
 
 on:
   schedule:
-    - cron: '50 02 * * *'
+  - cron: '50 02 * * *'
   workflow_dispatch:
     inputs:
       pr:
@@ -102,31 +102,31 @@ jobs:
       fail-fast: false
       matrix:
         zoo:
-          - image: docker.io/library/debian:11
-            install: apt-get update && apt-get install -y gcc make perl
-          - image: docker.io/library/debian:12
-            install: apt-get update && apt-get install -y gcc make perl
-          - image: docker.io/library/debian:trixie
-            install: apt-get update && apt-get install -y gcc make perl
-          - image: docker.io/library/ubuntu:20.04
-            install: apt-get update && apt-get install -y gcc make perl
-          - image: docker.io/library/ubuntu:22.04
-            install: apt-get update && apt-get install -y gcc make perl
-          - image: docker.io/library/ubuntu:24.04
-            install: apt-get update && apt-get install -y gcc make perl
-          - image: docker.io/library/fedora:41
-            install: dnf install -y gcc make perl-core
-          - image: docker.io/library/fedora:42
-            install: dnf install -y gcc make perl-core
-          - image: docker.io/library/centos:8
-            install: |
-              sed -i 's/mirrorlist/#mirrorlist/g' /etc/yum.repos.d/CentOS-* && \
-              sed -i 's|#baseurl=http://mirror.centos.org|baseurl=http://vault.centos.org|g' /etc/yum.repos.d/CentOS-* && \
-              dnf install -y gcc make perl-core
-          - image: docker.io/library/rockylinux:8
-            install: dnf install -y gcc make perl-core
-          - image: docker.io/library/rockylinux:9
-            install: dnf install -y gcc make perl-core
+        - image: docker.io/library/debian:11
+          install: apt-get update && apt-get install -y gcc make perl
+        - image: docker.io/library/debian:12
+          install: apt-get update && apt-get install -y gcc make perl
+        - image: docker.io/library/debian:trixie
+          install: apt-get update && apt-get install -y gcc make perl
+        - image: docker.io/library/ubuntu:20.04
+          install: apt-get update && apt-get install -y gcc make perl
+        - image: docker.io/library/ubuntu:22.04
+          install: apt-get update && apt-get install -y gcc make perl
+        - image: docker.io/library/ubuntu:24.04
+          install: apt-get update && apt-get install -y gcc make perl
+        - image: docker.io/library/fedora:41
+          install: dnf install -y gcc make perl-core
+        - image: docker.io/library/fedora:42
+          install: dnf install -y gcc make perl-core
+        - image: docker.io/library/centos:8
+          install: |
+            sed -i 's/mirrorlist/#mirrorlist/g' /etc/yum.repos.d/CentOS-* && \
+            sed -i 's|#baseurl=http://mirror.centos.org|baseurl=http://vault.centos.org|g' /etc/yum.repos.d/CentOS-* && \
+            dnf install -y gcc make perl-core
+        - image: docker.io/library/rockylinux:8
+          install: dnf install -y gcc make perl-core
+        - image: docker.io/library/rockylinux:9
+          install: dnf install -y gcc make perl-core
     runs-on: ubuntu-latest
     container: ${{ matrix.zoo.image }}
     steps:
@@ -149,110 +149,6 @@ jobs:
     - name: make test
       run: make test HARNESS_JOBS=${HARNESS_JOBS:-4} LHASH_WORKERS=${LHASH_WORKERS:-16}
 
-  macos:
-    needs: [validate-dispatch-inputs]
-    if: |
-      github.repository == 'openssl/openssl' &&
-      !cancelled() &&
-      (needs.validate-dispatch-inputs.result == 'success' || needs.validate-dispatch-inputs.result == 'skipped')
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [macos-14, macos-15, macos-15-intel]
-    runs-on: ${{ matrix.os }}
-    steps:
-    - uses: actions/checkout@v6
-      with:
-        persist-credentials: false
-        ref: ${{ github.event.inputs.head_sha || github.sha }}
-    - name: checkout fuzz/corpora submodule
-      run: git submodule update --init --depth 1 fuzz/corpora
-    - name: config
-      run: ./config --strict-warnings --banner=Configured enable-fips enable-demos enable-h3demo
-    - name: config dump
-      run: ./configdata.pm --dump
-    - name: make
-      run: make -s -j4
-    - name: get cpu info
-      run: |
-        sysctl machdep.cpu
-        ./util/opensslwrap.sh version -c
-    - name: make test
-      run: make test HARNESS_JOBS=${HARNESS_JOBS:-4} LHASH_WORKERS=${LHASH_WORKERS:-16}
-
-  windows:
-    needs: [validate-dispatch-inputs]
-    if: |
-      github.repository == 'openssl/openssl' &&
-      !cancelled() &&
-      (needs.validate-dispatch-inputs.result == 'success' || needs.validate-dispatch-inputs.result == 'skipped')
-    strategy:
-      fail-fast: false
-      matrix:
-        platform:
-          - os: windows-2022
-            vcvars: C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat
-          - os: windows-2025
-            vcvars: C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Auxiliary\Build\vcvars64.bat
-    runs-on: ${{ matrix.platform.os }}
-    steps:
-    - uses: actions/checkout@v6
-      with:
-        persist-credentials: false
-        ref: ${{ github.event.inputs.head_sha || github.sha }}
-    - name: checkout fuzz/corpora submodule
-      run: git submodule update --init --depth 1 fuzz/corpora
-    - name: install nasm
-      run: |
-        $installer = "nasm-3.01-installer-x64.exe"
-        Invoke-WebRequest -Uri "https://openssl-library.org/ci-deps/$installer" -OutFile $installer
-        $expected = (Get-Content "$env:GITHUB_WORKSPACE\.github\ci-deps.json" -Raw | ConvertFrom-Json).$installer
-        $actual = (Get-FileHash $installer -Algorithm SHA256).Hash
-        if ($actual -ne $expected) { throw "SHA256 mismatch for $installer (expected $expected, got $actual)" }
-        Start-Process -FilePath ".\$installer" -ArgumentList '/S' -Wait
-        "C:\Program Files\NASM" | Out-File -FilePath "$env:GITHUB_PATH" -Append
-    - name: install jom
-      run: |
-        mkdir C:\jom
-        Invoke-WebRequest -Uri "https://openssl-library.org/ci-deps/jom-1.1.7.exe" -OutFile C:\jom\jom.exe
-        $expected = (Get-Content "$env:GITHUB_WORKSPACE\.github\ci-deps.json" -Raw | ConvertFrom-Json).'jom-1.1.7.exe'
-        $actual = (Get-FileHash C:\jom\jom.exe -Algorithm SHA256).Hash
-        if ($actual -ne $expected) { throw "SHA256 mismatch for jom.exe (expected $expected, got $actual)" }
-        "C:\jom" | Out-File -FilePath "$env:GITHUB_PATH" -Append
-    - name: prepare the build directory
-      run: mkdir _build
-    - name: config
-      working-directory: _build
-      shell: cmd
-      run: |
-        call "${{ matrix.platform.vcvars }}"
-        perl ..\Configure --banner=Configured --strict-warnings no-makedepend enable-fips
-        perl configdata.pm --dump
-    - name: build
-      working-directory: _build
-      shell: cmd
-      run: |
-        call "${{ matrix.platform.vcvars }}"
-        jom /j4 /S
-    - name: download coreinfo
-      run: |
-        mkdir _build\coreinfo
-        Invoke-WebRequest -Uri "https://download.sysinternals.com/files/Coreinfo.zip" -outfile "_build\coreinfo\Coreinfo.zip"
-    - name: get cpu info
-      working-directory: _build
-      run: |
-        7z.exe x coreinfo/Coreinfo.zip
-        ./Coreinfo64.exe -accepteula -f
-        apps/openssl.exe version -c
-    - name: test
-      working-directory: _build
-      shell: cmd
-      run: |
-        call "${{ matrix.platform.vcvars }}"
-        jom test VERBOSE_FAILURE=yes HARNESS_JOBS=4 LHASH_WORKERS=16
-
-  # GitHub-hosted, so pull-request code may build here: coverage bought, not risked. The
-  # repository clause is new -- a cron in a fork expresses nobody's intent.
   linux-arm64:
     needs: [validate-dispatch-inputs]
     if: |
@@ -293,8 +189,7 @@ jobs:
         CONTAINER_ID=$(podman run -d -v $(pwd):/mnt -w /mnt --platform=linux/i386 docker.io/i386/debian:13 sleep infinity)
         echo "CONTAINER_ID=$CONTAINER_ID" >> "$GITHUB_ENV"
     - name: install dependencies
-      run:
-        podman exec -t $CONTAINER_ID sh -c "apt-get update && apt-get install -y gcc perl make"
+      run: podman exec -t $CONTAINER_ID sh -c "apt-get update && apt-get install -y gcc perl make"
     - name: config
       run: |
         podman exec -t $CONTAINER_ID sh -c \

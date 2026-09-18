@@ -10,7 +10,7 @@ name: Run-checker daily
 
 on:
   schedule:
-    - cron: '30 02 * * *'
+  - cron: '30 02 * * *'
   workflow_dispatch:
     inputs:
       pr:
@@ -58,119 +58,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        opt: [
-          386,
-          no-apps,
-          no-argon2,
-          no-aria,
-          no-asan,
-          no-asm,
-          no-async,
-          no-autoalginit,
-          no-autoerrinit,
-          no-autoload-config,
-          no-bf,
-          no-blake2,
-          no-buildtest-c++,
-          no-bulk,
-          no-cached-fetch,
-          no-camellia,
-          no-cast,
-          no-chacha,
-          no-cmac,
-          no-comp,
-          enable-crypto-mdebug,
-          no-ct,
-          enable-demos,
-          no-deprecated,
-          no-des,
-          no-docs,
-          no-dsa,
-          no-dtls1,
-          no-dtls1_2,
-          no-dtls1_3,
-          no-dtls1_2-method,
-          no-dtls1-method,
-          enable-ec_nistp_64_gcc_128,
-          enable-egd,
-#          enable-external-tests,  # Requires extra setup
-          enable-fips,
-          enable-fips enable-acvp-tests,
-          enable-fips no-tls1_3,
-          enable-fips no-des no-dsa no-ec2m,
-#          enable-fuzz-afl,        # Requires extra setup
-#          enable-fuzz-libfuzzer,  # Requires extra setup
-          no-gost,
-          enable-h3demo,
-          enable-hqinterop,
-          no-hmac-drbg-kdf,
-          no-hw,
-          no-idea,
-          no-ikev2kdf,
-          no-kbkdf,
-          no-krb5kdf,
-          enable-lms,
-          no-makedepend,
-          enable-md2,
-          no-md4,
-          no-mdc2,
-          no-msan,
-          no-multiblock,
-          no-nextprotoneg,
-          no-ocb,
-          no-pic,
-          no-poly1305,
-          no-posix-io,
-          no-psk,
-          no-pvkkdf,
-          no-rc2,
-          enable-rc5,
-          no-rdrand,
-          no-rfc3779,
-          no-ripemd,
-          no-rmd160,
-          no-scrypt,
-          no-secure-memory,
-          no-seed,
-          no-shared,
-          no-siphash,
-          no-siv,
-          no-sm2-precomp,
-          no-sm3,
-          no-sm4,
-          no-snmpkdf,
-          no-sock,
-          no-srtpkdf,
-          no-sse2,
-          no-sshkdf,
-          no-sskdf,
-          no-ssl,
-          no-ssl-trace,
-          enable-sslkeylog,
-          no-shared,
-          no-tests,
-          enable-tfo,
-          no-tls1,
-          no-tls1_1,
-          no-tls1_1-method,
-          no-tls1_2-method,
-          no-tls1-method,
-          enable-trace,
-          no-ubsan,
-          no-ui-console,
-          enable-unit-test,
-          no-uplink,
-          no-weak-ssl-ciphers,
-          no-whirlpool,
-          no-x942kdf,
-          no-x963kdf,
-          enable-zlib-dynamic,
-          -DOPENSSL_PEDANTIC_ZEROIZATION,
-          -DOPENSSL_PEDANTIC_ZEROIZATION enable-fips,
-          -DOPENSSL_NO_BUILTIN_OVERFLOW_CHECKING,
-          -DSSL3_ALIGN_PAYLOAD=4,
-          -DOPENSSL_TLS_SECURITY_LEVEL=0
-        ]
+        opt: [386, no-apps, no-argon2, no-aria, no-asan, no-asm, no-async, no-autoalginit, no-autoerrinit, no-autoload-config, no-bf, no-blake2, no-buildtest-c++, no-bulk, no-cached-fetch, no-camellia, no-cast, no-chacha, no-cmac, no-comp, enable-crypto-mdebug, no-ct, enable-demos, no-deprecated, no-des, no-docs, no-dsa, no-dtls1, no-dtls1_2, no-dtls1_3, no-dtls1_2-method, no-dtls1-method, enable-ec_nistp_64_gcc_128, enable-egd, enable-fips, enable-fips enable-acvp-tests, enable-fips no-tls1_3, enable-fips no-des no-dsa no-ec2m, no-gost, enable-h3demo, enable-hqinterop, no-hmac-drbg-kdf, no-hw, no-idea, no-ikev2kdf, no-kbkdf, no-krb5kdf, enable-lms, no-makedepend, enable-md2, no-md4, no-mdc2, no-msan, no-multiblock, no-nextprotoneg, no-ocb, no-pic, no-poly1305, no-posix-io, no-psk, no-pvkkdf, no-rc2, enable-rc5, no-rdrand, no-rfc3779, no-ripemd, no-rmd160, no-scrypt, no-secure-memory, no-seed, no-shared, no-siphash, no-siv, no-sm2-precomp, no-sm3, no-sm4, no-snmpkdf, no-sock, no-srtpkdf, no-sse2, no-sshkdf, no-sskdf, no-ssl, no-ssl-trace, enable-sslkeylog, no-shared, no-tests, enable-tfo, no-tls1, no-tls1_1, no-tls1_1-method, no-tls1_2-method, no-tls1-method, enable-trace, no-ubsan, no-ui-console, enable-unit-test, no-uplink, no-weak-ssl-ciphers, no-whirlpool, no-x942kdf, no-x963kdf, enable-zlib-dynamic, -DOPENSSL_PEDANTIC_ZEROIZATION, -DOPENSSL_PEDANTIC_ZEROIZATION enable-fips, -DOPENSSL_NO_BUILTIN_OVERFLOW_CHECKING, -DSSL3_ALIGN_PAYLOAD=4, -DOPENSSL_TLS_SECURITY_LEVEL=0]
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v6
@@ -207,14 +95,14 @@ jobs:
     - name: checkout fuzz/corpora submodule
       run: git submodule update --init --depth 1 fuzz/corpora
     - name: Install Dependencies for sctp option
-      run:  |
+      run: |
         sudo apt-get update
         sudo apt-get -yq install lksctp-tools libsctp-dev
 
     - name: Check SCTP and enable auth
       id: sctp_auth
       continue-on-error: true
-      run:  |
+      run: |
         checksctp
         sudo sysctl -w net.sctp.auth_enable=1
 
@@ -436,7 +324,8 @@ jobs:
       (needs.validate-dispatch-inputs.result == 'success' || needs.validate-dispatch-inputs.result == 'skipped')
     strategy:
       matrix:
-        os: [ubuntu-latest, macos-15, macos-15-intel]
+        os:
+        - ubuntu-latest
     runs-on: ${{matrix.os}}
     steps:
     - uses: actions/checkout@v6
